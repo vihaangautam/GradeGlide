@@ -1,4 +1,4 @@
-# GradeGlide 🎓✨
+# GradeGlide
 
 **The AI-Powered Assessment Co-pilot for Private Tutors & Coaching Centers.**
 
