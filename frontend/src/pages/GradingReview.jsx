@@ -594,10 +594,15 @@ function QuestionCard({ q, isActive, onSelect, onUpdateMark }) {
     )
 }
 
+
 // ─── Main Component ───────────────────────────────────────────────────────────
+const BACKEND_BASE = 'http://localhost:8000'
+
 export default function GradingReview() {
     const { id } = useParams()
-    const [data, setData] = useState(MOCK_EXAM_DATA)
+    const [data, setData] = useState(null)
+    const [loading, setLoading] = useState(true)
+    const [apiError, setApiError] = useState(null)
     const [activeQ, setActiveQ] = useState(null)
     const [zoom, setZoom] = useState(1)
     const [rotation, setRotation] = useState(0)
@@ -606,20 +611,51 @@ export default function GradingReview() {
     const [activeTab, setActiveTab] = useState('ai')
     const imageContainerRef = useRef(null)
     const clearCanvasRef = useRef(null)
+    const saveTimer = useRef(null)
 
-    const handleUpdateMark = (qid, newMark) => {
-        const updatedQuestions = data.questions.map(q =>
-            q.id === qid ? { ...q, obtainedMarks: newMark } : q
-        )
-        const newTotal = updatedQuestions.reduce((sum, q) =>
-            sum + (q.obtainedMarks ?? 0), 0)
-        setData({ ...data, questions: updatedQuestions, obtainedMarks: newTotal })
-    }
+    // ── Fetch session from backend; fall back to mock if backend is offline ──
+    useEffect(() => {
+        setLoading(true)
+        fetch(`${BACKEND_BASE}/sessions/${id}`)
+            .then(r => r.ok ? r.json() : Promise.reject(r.status))
+            .then(json => { setData(json); setApiError(null) })
+            .catch(() => {
+                // Backend offline → use built-in mock so UI still works
+                setData(MOCK_EXAM_DATA)
+                setApiError('Backend offline — showing demo data')
+            })
+            .finally(() => setLoading(false))
+    }, [id])
+
+    // ── Save mark updates to backend (debounced 600ms) ───────────────────────
+    const handleUpdateMark = useCallback((qid, newMark, stepId = null) => {
+        setData(prev => {
+            if (!prev) return prev
+            const updatedQuestions = prev.questions.map(q =>
+                q.id === qid ? { ...q, obtainedMarks: newMark } : q
+            )
+            const newTotal = updatedQuestions.reduce((sum, q) => sum + (q.obtainedMarks ?? 0), 0)
+            return { ...prev, questions: updatedQuestions, obtainedMarks: newTotal }
+        })
+
+        // Debounce the PATCH request
+        clearTimeout(saveTimer.current)
+        saveTimer.current = setTimeout(() => {
+            fetch(`${BACKEND_BASE}/sessions/${id}/marks`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    question_id: String(qid),
+                    step_id: stepId,
+                    obtained_marks: newMark,
+                }),
+            }).catch(() => { }) // Silently ignore if backend offline
+        }, 600)
+    }, [id])
 
     // When a Q is selected from the right pane, highlight its bbox on the left
     const handleSelectQ = useCallback((qid) => {
         setActiveQ(prev => prev === qid ? null : qid)
-        // Smooth flash: clear after 1.8s
         setTimeout(() => setActiveQ(null), 1800)
     }, [])
 
@@ -638,11 +674,36 @@ export default function GradingReview() {
         brightness ? 'brightness(1.35) contrast(1.2)' : '',
     ].filter(Boolean).join(' ') || 'none'
 
+    // ── Loading state ────────────────────────────────────────────────────────
+    if (loading) {
+        return (
+            <div className="h-[calc(100vh-8rem)] flex items-center justify-center">
+                <div className="text-center space-y-3">
+                    <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+                    <p className="text-muted-foreground text-sm">Loading grading session…</p>
+                </div>
+            </div>
+        )
+    }
+
+    if (!data) {
+        return (
+            <div className="h-[calc(100vh-8rem)] flex items-center justify-center">
+                <p className="text-destructive">Session not found.</p>
+            </div>
+        )
+    }
+
+    // Determine image source: backend URL > local static fallback
+    const answerSheetSrc = data.answerSheetUrl
+        ? `${BACKEND_BASE}${data.answerSheetUrl}`
+        : '/answer_sheet.png'
+
     return (
         <div className="h-[calc(100vh-8rem)] flex flex-col">
 
             {/* ── Top Bar ── */}
-            <div className="flex items-center justify-between mb-4 pb-4 border-b shrink-0">
+            < div className="flex items-center justify-between mb-4 pb-4 border-b shrink-0" >
                 <div className="flex items-center gap-3">
                     <Link to="/grading">
                         <Button variant="ghost" size="icon">
@@ -662,25 +723,36 @@ export default function GradingReview() {
                             <span className="text-muted-foreground text-sm font-normal">/ {data.totalMarks}</span>
                         </div>
                     </div>
-                    <Button size="lg" className="gap-2">
+                    <Button size="lg" className="gap-2" onClick={() => {
+                        fetch(`${BACKEND_BASE}/sessions/${id}/finalise`, { method: 'POST' }).catch(() => { })
+                        setData(d => d ? { ...d, status: 'completed' } : d)
+                    }}>
                         <Save className="w-4 h-4" /> Finalize Grade
                     </Button>
                 </div>
-            </div>
+            </div >
+
+            {/* ── API offline banner ── */}
+            {apiError && (
+                <div className="mb-3 flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-xs text-amber-800 shrink-0">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    {apiError} — start the backend with <code className="font-mono bg-amber-100 px-1 rounded">uvicorn main:app --reload</code> for real data.
+                </div>
+            )}
 
             {/* ── Split Screen ── */}
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-5 overflow-hidden min-h-0">
+            < div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-5 overflow-hidden min-h-0" >
 
                 {/* ════ LEFT PANE — Image Viewer ════ */}
-                <div className="flex flex-col min-h-0 overflow-hidden rounded-lg border bg-slate-100">
+                < div className="flex flex-col min-h-0 overflow-hidden rounded-lg border bg-slate-100" >
 
                     {/* Image Toolbar */}
-                    <div className="flex items-center gap-1 px-3 py-2 border-b bg-white shrink-0 flex-wrap">
+                    < div className="flex items-center gap-1 px-3 py-2 border-b bg-white shrink-0 flex-wrap" >
                         {/* Zoom */}
-                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={zoomOut}
-                            title="Zoom Out">
+                        < Button size="icon" variant="ghost" className="h-8 w-8" onClick={zoomOut}
+                            title="Zoom Out" >
                             <ZoomOut className="w-4 h-4" />
-                        </Button>
+                        </Button >
                         <span className="text-xs font-mono w-10 text-center text-muted-foreground">
                             {Math.round(zoom * 100)}%
                         </span>
@@ -719,20 +791,24 @@ export default function GradingReview() {
                             {redPen ? 'Drawing…' : 'Red Pen'}
                         </Button>
 
-                        {redPen && (
-                            <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground"
-                                onClick={() => clearCanvasRef.current?.()}
-                                title="Clear drawings">
-                                <Trash2 className="w-4 h-4" />
-                            </Button>
-                        )}
+                        {
+                            redPen && (
+                                <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground"
+                                    onClick={() => clearCanvasRef.current?.()}
+                                    title="Clear drawings">
+                                    <Trash2 className="w-4 h-4" />
+                                </Button>
+                            )
+                        }
 
-                        {!redPen && (
-                            <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground"
-                                title="Pan mode (default)">
-                                <MousePointer className="w-4 h-4" />
-                            </Button>
-                        )}
+                        {
+                            !redPen && (
+                                <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground"
+                                    title="Pan mode (default)">
+                                    <MousePointer className="w-4 h-4" />
+                                </Button>
+                            )
+                        }
 
                         <div className="ml-auto flex items-center gap-1">
                             <Button size="icon" variant="ghost" className="h-8 w-8"
@@ -740,12 +816,13 @@ export default function GradingReview() {
                                 <RefreshCw className="w-3.5 h-3.5" />
                             </Button>
                         </div>
-                    </div>
+                    </div >
 
                     {/* Image viewport — overflow + scroll for panning */}
-                    <div
+                    < div
                         className="flex-1 overflow-auto bg-slate-200/60 flex items-start justify-center p-4 min-h-0"
-                        style={{ cursor: redPen ? 'crosshair' : 'default' }}
+                        style={{ cursor: redPen ? 'crosshair' : 'default' }
+                        }
                     >
                         <div
                             ref={imageContainerRef}
@@ -758,8 +835,14 @@ export default function GradingReview() {
                                 filter: imgFilter,
                             }}
                         >
-                            {/* Real photographed answer sheet */}
-                            <AnswerSheetPhoto />
+                            {/* Answer sheet — real upload from backend or static fallback */}
+                            <img
+                                src={answerSheetSrc}
+                                alt="Student answer sheet"
+                                draggable={false}
+                                style={{ width: '100%', display: 'block', userSelect: 'none' }}
+                                onError={e => { e.target.src = '/answer_sheet.png' }}
+                            />
 
                             {/* Bounding box overlays */}
                             <BoundingBoxes
@@ -771,10 +854,10 @@ export default function GradingReview() {
                             {/* Red pen canvas layer */}
                             <RedPenCanvas active={redPen} onClear={clearCanvasRef} />
                         </div>
-                    </div>
+                    </div >
 
                     {/* Page footer */}
-                    <div className="bg-white border-t px-4 py-1.5 flex justify-between items-center text-xs text-muted-foreground shrink-0">
+                    < div className="bg-white border-t px-4 py-1.5 flex justify-between items-center text-xs text-muted-foreground shrink-0" >
                         <span>Page 1 of 3</span>
                         <div className="flex gap-1">
                             <Button size="icon" variant="ghost" className="h-6 w-6">
@@ -784,54 +867,58 @@ export default function GradingReview() {
                                 <ChevronRight className="w-3 h-3" />
                             </Button>
                         </div>
-                    </div>
-                </div>
+                    </div >
+                </div >
 
                 {/* ════ RIGHT PANE — Grading Panel ════ */}
-                <div className="flex flex-col min-h-0 overflow-hidden">
+                < div className="flex flex-col min-h-0 overflow-hidden" >
                     {/* Tab bar */}
-                    <div className="bg-muted/30 border rounded-lg p-1 mb-3 flex gap-1 shrink-0">
-                        {[
-                            { key: 'ai', label: 'AI Suggestions' },
-                            { key: 'rubric', label: 'Rubric' },
-                            { key: 'key', label: 'Answer Key' },
-                        ].map(tab => (
-                            <Button
-                                key={tab.key}
-                                variant={activeTab === tab.key ? 'secondary' : 'ghost'}
-                                size="sm"
-                                className={cn('flex-1 text-xs',
-                                    activeTab === tab.key
-                                        ? 'shadow-sm bg-white text-primary'
-                                        : 'text-muted-foreground'
-                                )}
-                                onClick={() => setActiveTab(tab.key)}
-                            >
-                                {tab.label}
-                            </Button>
-                        ))}
-                    </div>
+                    < div className="bg-muted/30 border rounded-lg p-1 mb-3 flex gap-1 shrink-0" >
+                        {
+                            [
+                                { key: 'ai', label: 'AI Suggestions' },
+                                { key: 'rubric', label: 'Rubric' },
+                                { key: 'key', label: 'Answer Key' },
+                            ].map(tab => (
+                                <Button
+                                    key={tab.key}
+                                    variant={activeTab === tab.key ? 'secondary' : 'ghost'}
+                                    size="sm"
+                                    className={cn('flex-1 text-xs',
+                                        activeTab === tab.key
+                                            ? 'shadow-sm bg-white text-primary'
+                                            : 'text-muted-foreground'
+                                    )}
+                                    onClick={() => setActiveTab(tab.key)}
+                                >
+                                    {tab.label}
+                                </Button>
+                            ))
+                        }
+                    </div >
 
                     {/* Instruction hint */}
-                    <p className="text-[11px] text-muted-foreground mb-2 shrink-0">
+                    < p className="text-[11px] text-muted-foreground mb-2 shrink-0" >
                         Click a question to highlight it on the answer sheet →
-                    </p>
+                    </p >
 
                     {/* Question cards */}
-                    <div className="flex-1 overflow-y-auto pr-1 min-h-0">
-                        {data.questions.map(q => (
-                            <QuestionCard
-                                key={q.id}
-                                q={q}
-                                isActive={activeQ === q.id}
-                                onSelect={handleSelectQ}
-                                onUpdateMark={handleUpdateMark}
-                            />
-                        ))}
-                    </div>
-                </div>
+                    < div className="flex-1 overflow-y-auto pr-1 min-h-0" >
+                        {
+                            data.questions.map(q => (
+                                <QuestionCard
+                                    key={q.id}
+                                    q={q}
+                                    isActive={activeQ === q.id}
+                                    onSelect={handleSelectQ}
+                                    onUpdateMark={handleUpdateMark}
+                                />
+                            ))
+                        }
+                    </div >
+                </div >
 
-            </div>
-        </div>
+            </div >
+        </div >
     )
 }

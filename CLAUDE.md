@@ -28,16 +28,65 @@ npm run preview
 npm run lint
 ```
 
+### Backend Development
+```bash
+cd backend
+
+# Create virtual environment (first time)
+python -m venv .venv
+.venv\Scripts\activate   # Windows
+# source .venv/bin/activate  # macOS/Linux
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Copy env template and add your Gemini API key
+copy .env.example .env   # Windows
+
+# Start API server using the venv's uvicorn (avoids system Python conflict)
+.venv\Scripts\uvicorn.exe main:app --reload --port 8000
+
+# View interactive API docs
+# Open http://localhost:8000/docs in your browser
+```
+
+### Optional Tool Installation (enhances AI grading)
+- **Tesseract OCR** (for handwriting text extraction):
+  Download from https://github.com/UB-Mannheim/tesseract/wiki
+  Set `TESSERACT_CMD=C:/Program Files/Tesseract-OCR/tesseract.exe` in `.env`
+- **Poppler** (for PDF-to-image conversion):
+  Download from https://github.com/oschwartz10612/poppler-windows/releases
+  Set `POPPLER_PATH=C:/poppler/Library/bin` in `.env`
+- **Gemini API Key** (free tier — 15 RPM, 1M tokens/day):
+  Get at https://aistudio.google.com/app/apikey
+  Set `GEMINI_API_KEY=your_key` in `.env`
+
+> Both services degrade gracefully: without Tesseract, OCR uses synthetic regions;
+> without Gemini API key, grading returns low-confidence placeholders for manual entry.
 ## Project Architecture
 
 ### Frontend Structure
 - **Framework**: React 18 with Vite build tool
 - **Routing**: React Router v6 with nested route structure
 - **Styling**: Tailwind CSS with shadcn/ui components
+- **API Client**: `src/lib/api.js` — all backend calls go through here
 - **Component Organization**:
   - `/src/components/ui/`: Reusable UI components (badge, button, card)
   - `/src/components/layout/`: Layout components (AppLayout wrapper)
   - `/src/pages/`: Page components corresponding to routes
+
+### Backend Structure
+- **Framework**: FastAPI + Uvicorn (Python)
+- **Database**: SQLite via SQLAlchemy (file: `backend/gradeglide.db`)
+- **File Storage**: Local `backend/uploads/` directory
+- **API Routers**:
+  - `api/upload.py` — `POST /upload/session` (file upload + AI pipeline)
+  - `api/grading.py` — `GET/PATCH /sessions/*` (review + mark updates)
+  - `api/export.py` — `GET /sessions/{id}/export` (CSV/JSON download)
+- **Services**:
+  - `services/pdf_processor.py` — PDF/image → PIL images (pdf2image + Poppler)
+  - `services/ocr_service.py` — Tesseract OCR, detects Q1/Q2 regions + bboxes
+  - `services/ai_grader.py` — Gemini 1.5 Flash structured grading prompt
 
 ### Key Pages and Routes
 - `/` - Dashboard: Main overview and metrics
