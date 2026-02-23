@@ -1,10 +1,8 @@
-# GradeGlide 🎓✨
+# GradeGlide
 
 **The AI-Powered Assessment Co-pilot for Private Tutors & Coaching Centers.**
-
 GradeGlide eliminates the manual burden of grading answer sheets, allowing tutors to focus on teaching. Using advanced AI (Gemini 1.5 Pro), it reads handwritten answers, grades them against a key, and provides detailed student feedback in seconds.
 
-![GradeGlide Dashboard Mockup](https://placeholder-image-url.com) *(Add actual screenshot here)*
 
 ## 🚀 Core Features
 
