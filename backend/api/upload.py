@@ -1,14 +1,16 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Depends
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Depends, Form
 from sqlalchemy.orm import Session
 import shutil
 import uuid
 import json
 from pathlib import Path
+from typing import Optional
 
 from database import get_db
 from models.session import GradingSession, AnswerSheetImage
 from models.question import Question, QuestionStep
 from models.result import GradingResult
+from models.answer_key import AnswerKey
 from services.pdf_processor import file_to_images, save_page_images
 from services.ocr_service import detect_question_regions
 from services.ai_grader import grade_answer
@@ -54,12 +56,33 @@ DEFAULT_SCHEMES = {
 async def create_grading_session(
     background_tasks: BackgroundTasks,
     answer_sheet: UploadFile = File(...),
+    answer_key_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     """
     Upload an answer sheet (PDF or image).
+    Optionally pass answer_key_id to use a saved marking scheme.
     Returns a session_id immediately; processing happens in the background.
     """
+    # ── Resolve marking scheme ────────────────────────────────────────────────
+    scheme: dict  # {q_number -> {type, text, max_marks, steps}}
+    subject = "Physics"  # default
+    exam_title = "Uploaded Exam"
+
+    if answer_key_id:
+        ak = db.get(AnswerKey, answer_key_id)
+        if not ak:
+            raise HTTPException(status_code=404, detail=f"Answer key '{answer_key_id}' not found.")
+        subject = ak.subject
+        exam_title = ak.exam_title or ak.title
+        scheme = {q["q_number"]: q for q in ak.questions}
+    else:
+        # Fallback: built-in Physics demo scheme
+        scheme = {
+            q_num: {"type": v["type"], "text": v["text"], "max_marks": v["max_marks"], "steps": v["steps"]}
+            for q_num, v in DEFAULT_SCHEMES.items()
+        }
+
     session_id = str(uuid.uuid4())
 
     # Save the uploaded file
@@ -73,9 +96,9 @@ async def create_grading_session(
         id=session_id,
         student_name="Unknown Student",
         roll_no="—",
-        subject="Physics",
-        exam_title="Uploaded Exam",
-        total_marks=sum(q["max_marks"] for q in DEFAULT_SCHEMES.values()),
+        subject=subject,
+        exam_title=exam_title,
+        total_marks=sum(q["max_marks"] for q in scheme.values()),
         status="processing",
     )
     db.add(session)
@@ -92,14 +115,14 @@ async def create_grading_session(
     db.commit()
 
     # Queue background processing
-    background_tasks.add_task(_process_session, session_id, str(raw_path))
+    background_tasks.add_task(_process_session, session_id, str(raw_path), scheme)
     return {"session_id": session_id, "status": "processing"}
 
 
-def _process_session(session_id: str, file_path: str):
+def _process_session(session_id: str, file_path: str, scheme: dict):
     """
     Background task: OCR + AI grading pipeline.
-    Runs after the upload endpoint returns.
+    `scheme` is a dict of {q_number -> {type, text, max_marks, steps}}.
     """
     from database import SessionLocal
     db = SessionLocal()
@@ -131,7 +154,7 @@ def _process_session(session_id: str, file_path: str):
         total_marks = 0.0
 
         # 3. Create Question + Step + Result records
-        for q_num, scheme in DEFAULT_SCHEMES.items():
+        for q_num, q_scheme in scheme.items():
             region = region_map.get(q_num, {})
             student_text = region.get("raw_text", "")
             bbox_pct = region.get("bbox_pct", {"x": 0, "y": q_num * 25, "w": 100, "h": 25})
@@ -140,16 +163,16 @@ def _process_session(session_id: str, file_path: str):
             question = Question(
                 session_id=session_id,
                 q_number=q_num,
-                question_text=scheme["text"],
-                max_marks=scheme["max_marks"],
-                question_type=scheme["type"],
+                question_text=q_scheme["text"],
+                max_marks=q_scheme["max_marks"],
+                question_type=q_scheme["type"],
                 bbox_json=json.dumps(bbox_pct),
             )
             db.add(question)
             db.flush()  # get question.id
 
             # Create Steps
-            for i, step_def in enumerate(scheme.get("steps", [])):
+            for i, step_def in enumerate(q_scheme.get("steps", [])):
                 step = QuestionStep(
                     question_id=question.id,
                     step_key=step_def["step_key"],
@@ -163,10 +186,10 @@ def _process_session(session_id: str, file_path: str):
 
             # 4. AI grade this question
             grading = grade_answer(
-                question_text=scheme["text"],
-                question_type=scheme["type"],
-                max_marks=scheme["max_marks"],
-                marking_scheme=scheme.get("steps", []),
+                question_text=q_scheme["text"],
+                question_type=q_scheme["type"],
+                max_marks=q_scheme["max_marks"],
+                marking_scheme=q_scheme.get("steps", []),
                 student_text=student_text,
                 cropped_image=region.get("cropped_image"),
             )

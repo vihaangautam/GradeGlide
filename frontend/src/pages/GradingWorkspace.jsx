@@ -9,6 +9,7 @@ import {
     UploadCloud,
     CheckCircle,
     AlertCircle,
+    Download,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -30,7 +31,19 @@ function UploadModal({ onClose, onSuccess }) {
     const [file, setFile] = useState(null)
     const [status, setStatus] = useState('idle') // idle | uploading | done | error
     const [errorMsg, setErrorMsg] = useState('')
+    const [answerKeys, setAnswerKeys] = useState([])
+    const [selectedKeyId, setSelectedKeyId] = useState('')
+    const [keysLoading, setKeysLoading] = useState(true)
     const inputRef = useRef()
+
+    // Fetch available answer keys on mount
+    useEffect(() => {
+        fetch(`${BACKEND}/answer-keys`)
+            .then(r => r.ok ? r.json() : [])
+            .then(data => { setAnswerKeys(data); if (data.length > 0) setSelectedKeyId(data[0].id) })
+            .catch(() => setAnswerKeys([]))
+            .finally(() => setKeysLoading(false))
+    }, [])
 
     const handleDrop = (e) => {
         e.preventDefault()
@@ -44,6 +57,7 @@ function UploadModal({ onClose, onSuccess }) {
         try {
             const form = new FormData()
             form.append('answer_sheet', file)
+            if (selectedKeyId) form.append('answer_key_id', selectedKeyId)
             const res = await fetch(`${BACKEND}/upload/session`, { method: 'POST', body: form })
             if (!res.ok) throw new Error(`Server error ${res.status}`)
             const data = await res.json()
@@ -63,6 +77,32 @@ function UploadModal({ onClose, onSuccess }) {
                 <p className="text-sm text-muted-foreground">
                     Upload a scanned PDF or photo of a student's answer sheet. AI will automatically grade it.
                 </p>
+
+                {/* Answer Key selector */}
+                <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Marking Scheme (Answer Key)</label>
+                    {keysLoading ? (
+                        <div className="h-9 bg-muted animate-pulse rounded-md" />
+                    ) : answerKeys.length === 0 ? (
+                        <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                            No answer keys saved yet — will use built-in Physics demo scheme.
+                            <a href="/answer-keys" className="underline font-medium ml-1">Create one →</a>
+                        </div>
+                    ) : (
+                        <select
+                            className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                            value={selectedKeyId}
+                            onChange={e => setSelectedKeyId(e.target.value)}
+                        >
+                            {answerKeys.map(k => (
+                                <option key={k.id} value={k.id}>
+                                    {k.title} ({k.questionCount} Qs · {k.totalMarks} marks)
+                                </option>
+                            ))}
+                        </select>
+                    )}
+                </div>
 
                 {/* Drop zone */}
                 <div
@@ -128,7 +168,7 @@ const SessionItem = ({ id, studentName, subject, examTitle, status, obtainedMark
                     </p>
                 </div>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
                 {obtainedMarks != null && (
                     <span className="text-sm font-semibold text-primary">
                         {obtainedMarks}/{totalMarks}
@@ -137,6 +177,21 @@ const SessionItem = ({ id, studentName, subject, examTitle, status, obtainedMark
                 <Badge variant={STATUS_COLOR[status] || 'secondary'}>
                     {status.charAt(0).toUpperCase() + status.slice(1)}
                 </Badge>
+                {/* CSV download — stops propagation so it doesn't navigate */}
+                <button
+                    title="Download CSV"
+                    className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                    onClick={e => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        const a = document.createElement('a')
+                        a.href = `${BACKEND}/sessions/${id}/export?format=csv`
+                        a.download = `gradeglide_${id.slice(0, 8)}.csv`
+                        a.click()
+                    }}
+                >
+                    <Download className="w-4 h-4" />
+                </button>
                 <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:translate-x-1 transition-transform" />
             </div>
         </div>

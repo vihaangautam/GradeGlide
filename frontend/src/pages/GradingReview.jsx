@@ -17,7 +17,8 @@ import {
     FileText,
     ChevronDown,
     AlertTriangle,
-    RefreshCw
+    RefreshCw,
+    Download,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -722,6 +723,35 @@ export default function GradingReview() {
                             {data.obtainedMarks}{' '}
                             <span className="text-muted-foreground text-sm font-normal">/ {data.totalMarks}</span>
                         </div>
+                    </div>
+                    {/* Export buttons */}
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                            onClick={() => {
+                                const a = document.createElement('a')
+                                a.href = `${BACKEND_BASE}/sessions/${id}/export?format=csv`
+                                a.download = `gradeglide_${id.slice(0, 8)}.csv`
+                                a.click()
+                            }}
+                        >
+                            <Download className="w-3.5 h-3.5" /> CSV
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                            onClick={() => {
+                                const a = document.createElement('a')
+                                a.href = `${BACKEND_BASE}/sessions/${id}/export?format=json`
+                                a.download = `gradeglide_${id.slice(0, 8)}.json`
+                                a.click()
+                            }}
+                        >
+                            <Download className="w-3.5 h-3.5" /> JSON
+                        </Button>
                     </div>
                     <Button size="lg" className="gap-2" onClick={() => {
                         fetch(`${BACKEND_BASE}/sessions/${id}/finalise`, { method: 'POST' }).catch(() => { })

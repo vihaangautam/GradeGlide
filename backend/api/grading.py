@@ -99,6 +99,42 @@ def list_sessions(db: Session = Depends(get_db)):
     ]
 
 
+@router.get("/stats")
+def get_dashboard_stats(db: Session = Depends(get_db)):
+    """Aggregate metrics and recent activity for the Dashboard page."""
+    all_sessions = db.query(GradingSession).all()
+
+    total = len(all_sessions)
+    completed = sum(1 for s in all_sessions if s.status == "completed")
+    processing = sum(1 for s in all_sessions if s.status in ("processing", "pending"))
+
+    # Distinct subjects seen (proxy for "answer keys used")
+    subjects = list({s.subject for s in all_sessions if s.subject})
+
+    # 5 most recent sessions for the activity feed
+    recent = sorted(all_sessions, key=lambda s: s.created_at, reverse=True)[:5]
+
+    return {
+        "totalPapersGraded": total,
+        "completed": completed,
+        "processing": processing,
+        "uniqueSubjects": len(subjects),
+        "recentSessions": [
+            {
+                "id": s.id,
+                "studentName": s.student_name,
+                "subject": s.subject,
+                "examTitle": s.exam_title,
+                "totalMarks": s.total_marks,
+                "obtainedMarks": s.obtained_marks,
+                "status": s.status,
+                "createdAt": s.created_at.isoformat(),
+            }
+            for s in recent
+        ],
+    }
+
+
 @router.get("/{session_id}")
 def get_session(session_id: str, db: Session = Depends(get_db)):
     """Full session data — matches MOCK_EXAM_DATA shape in GradingReview."""

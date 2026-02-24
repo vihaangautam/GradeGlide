@@ -42,10 +42,12 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 from api.upload import router as upload_router
 from api.grading import router as grading_router
 from api.export import router as export_router
+from api.answer_keys import router as answer_keys_router
 
 app.include_router(upload_router)
 app.include_router(grading_router)
 app.include_router(export_router)
+app.include_router(answer_keys_router)
 
 
 @app.get("/")
