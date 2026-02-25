@@ -43,7 +43,6 @@ def _export_json(session: GradingSession):
 
     payload = json.dumps({
         "student": session.student_name,
-        "rollNo": session.roll_no,
         "subject": session.subject,
         "totalMarks": session.total_marks,
         "obtainedMarks": session.obtained_marks,
@@ -62,7 +61,7 @@ def _export_csv(session: GradingSession):
     writer = csv.writer(buf)
 
     writer.writerow(["GradeGlide Export"])
-    writer.writerow(["Student", session.student_name, "Roll No", session.roll_no])
+    writer.writerow(["Student", session.student_name])
     writer.writerow(["Subject", session.subject, "Total", session.total_marks, "Obtained", session.obtained_marks])
     writer.writerow([])
     writer.writerow(["Q#", "Question", "Type", "Max Marks", "Obtained Marks", "Confidence", "AI Remark"])
