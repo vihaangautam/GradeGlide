@@ -95,7 +95,6 @@ async def create_grading_session(
     session = GradingSession(
         id=session_id,
         student_name="Unknown Student",
-        roll_no="—",
         subject=subject,
         exam_title=exam_title,
         total_marks=sum(q["max_marks"] for q in scheme.values()),

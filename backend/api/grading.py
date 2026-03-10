@@ -55,7 +55,6 @@ def _session_to_dict(session: GradingSession) -> dict:
 
     return {
         "studentName": session.student_name,
-        "rollNo": session.roll_no,
         "subject": session.subject,
         "totalMarks": session.total_marks,
         "obtainedMarks": session.obtained_marks,

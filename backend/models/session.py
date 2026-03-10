@@ -10,7 +10,6 @@ class GradingSession(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     student_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    roll_no: Mapped[str] = mapped_column(String(50), nullable=True)
     subject: Mapped[str] = mapped_column(String(100), nullable=False)
     exam_title: Mapped[str] = mapped_column(String(200), nullable=True)
     total_marks: Mapped[int] = mapped_column(default=0)
