@@ -4,6 +4,8 @@ from sqlalchemy import String, DateTime, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import Base
 
+## Tesseract executable
+#TESSERACT_CMD=C:/Program Files/Tesseract-OCR/tesseract.exe
 
 class GradingSession(Base):
     __tablename__ = "grading_sessions"
