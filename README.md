@@ -31,7 +31,7 @@ This repository currently contains the **Frontend MVP**.
 -   Node.js (v18+)
 -   npm
 
-### Installation
+### Installation:
 
 1.  Clone the repository:
     ```bash
