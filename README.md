@@ -41,6 +41,7 @@ This repository currently contains the **Frontend MVP**.
 
 2.  Navigate to the frontend directory:
     ```bash
+    
     cd frontend
     ```
 
